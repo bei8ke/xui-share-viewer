@@ -43,7 +43,7 @@ export function getSessionCookieOptions(
     httpOnly: true,
     path: "/",
 
-    secure: true, // 强制为 true，因为 Render 总是 HTTPS
-    sameSite: "None", // 明确设置为 None，允许跨站发送 Cookie，配合 secure: true
+    secure: true,
+    sameSite: "Lax", // 使用 Lax 提高兼容性，Render 域名通常不需要 None
   };
 }

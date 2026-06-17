@@ -30,10 +30,15 @@ export function registerPasswordAuthRoutes(app: Express) {
       lastSignedIn: new Date(),
     });
 
-    const sessionToken = await sdk.createSessionToken(adminOpenId, {
-      name: "管理员",
-      expiresInMs: ONE_YEAR_MS,
-    });
+    // 明确使用 signSession 以确保 appId 始终存在
+    const sessionToken = await sdk.signSession(
+      {
+        openId: adminOpenId,
+        appId: process.env.VITE_APP_ID || "xui-share-viewer",
+        name: "管理员",
+      },
+      { expiresInMs: ONE_YEAR_MS }
+    );
 
     const cookieOptions = getSessionCookieOptions(req);
     res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
