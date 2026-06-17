@@ -42,7 +42,8 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+
+    secure: true, // 强制为 true，因为 Render 总是 HTTPS
+    sameSite: "None", // 明确设置为 None，允许跨站发送 Cookie，配合 secure: true
   };
 }
