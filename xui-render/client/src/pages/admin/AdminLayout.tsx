@@ -4,6 +4,7 @@ import { Route, Switch, useLocation } from "wouter";
 import { BarChart3, Database, FolderOpen, Key, Link2, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import Login from "./Login";
 import Dashboard from "./Dashboard";
 import Records from "./Records";
 import Groups from "./Groups";
@@ -34,25 +35,7 @@ export default function AdminLayout() {
 
   // 未登录
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="text-center max-w-sm">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6">
-            <Key className="w-8 h-8 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">管理员登录</h1>
-          <p className="text-muted-foreground text-sm mb-6">
-            请使用管理员账号登录以访问后台管理系统
-          </p>
-          <Button
-            className="w-full"
-            onClick={() => (window.location.href = getLoginUrl())}
-          >
-            登录
-          </Button>
-        </div>
-      </div>
-    );
+    return <Login />;
   }
 
   // 非管理员
