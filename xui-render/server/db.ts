@@ -286,24 +286,29 @@ export async function getGroupsWithRecordCount() {
   const db = await getDb();
   if (!db) return [];
 
-  const result = await db
-    .select({
-      id: groups.id,
-      customerName: groups.customerName,
-      groupToken: groups.groupToken,
-      status: groups.status,
-      description: groups.description,
-      createdBy: groups.createdBy,
-      createdAt: groups.createdAt,
-      updatedAt: groups.updatedAt,
-      recordCount: sql<number>`COUNT(${groupRecords.id})`,
-    })
+  // 使用子查询方式避免 TiDB only_full_group_by 严格模式报错
+  const groupList = await db
+    .select()
     .from(groups)
-    .leftJoin(groupRecords, eq(groups.id, groupRecords.groupId))
-    .groupBy(groups.id)
     .orderBy(desc(groups.createdAt));
 
-  return result;
+  if (groupList.length === 0) return [];
+
+  // 批量查询每个分组的记录数
+  const counts = await db
+    .select({
+      groupId: groupRecords.groupId,
+      recordCount: sql<number>`COUNT(*)`,
+    })
+    .from(groupRecords)
+    .groupBy(groupRecords.groupId);
+
+  const countMap = new Map(counts.map((c) => [c.groupId, Number(c.recordCount)]));
+
+  return groupList.map((g) => ({
+    ...g,
+    recordCount: countMap.get(g.id) ?? 0,
+  }));
 }
 
 // ─── API Keys helpers ─────────────────────────────────────────────────────────
