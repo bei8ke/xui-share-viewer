@@ -57,6 +57,10 @@ export function registerImportApi(app: Express) {
     setCorsHeaders(res);
     return res.sendStatus(204);
   });
+  app.options("/api/import/ping", (_req: Request, res: Response) => {
+    setCorsHeaders(res);
+    return res.sendStatus(204);
+  });
 
   /**
    * GET /api/import/groups
@@ -226,5 +230,14 @@ export function registerImportApi(app: Express) {
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
     return res.json({ success: true, message: "API key is valid" });
+  });
+
+  /**
+   * GET /api/import/ping
+   * 公开的健康检查接口，用于外部唤醒
+   */
+  app.get("/api/import/ping", async (req: Request, res: Response) => {
+    setCorsHeaders(res);
+    return res.json({ success: true, message: "pong", timestamp: Date.now() });
   });
 }
