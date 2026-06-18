@@ -78,6 +78,58 @@ export async function getAllRecords(filter?: "assigned" | "unassigned") {
 }
 
 /**
+ * 获取所有记录，附带分组信息（用于管理后台展示）
+ */
+export async function getAllRecordsWithGroups(filter?: "assigned" | "unassigned") {
+  const db = await getDb();
+  if (!db) return [];
+
+  // 查询所有记录
+  let allRecords;
+  if (filter === "assigned") {
+    const assignedIds = db.selectDistinct({ recordId: groupRecords.recordId }).from(groupRecords);
+    allRecords = await db.select().from(records).where(inArray(records.id, assignedIds)).orderBy(desc(records.createdAt));
+  } else if (filter === "unassigned") {
+    const assignedIds = db.selectDistinct({ recordId: groupRecords.recordId }).from(groupRecords);
+    allRecords = await db.select().from(records).where(notInArray(records.id, assignedIds)).orderBy(desc(records.createdAt));
+  } else {
+    allRecords = await db.select().from(records).orderBy(desc(records.createdAt));
+  }
+
+  if (allRecords.length === 0) return [];
+
+  // 查询所有分组关联
+  const recordIds = allRecords.map(r => r.id);
+  const grRows = await db
+    .select({ recordId: groupRecords.recordId, groupId: groupRecords.groupId })
+    .from(groupRecords)
+    .where(inArray(groupRecords.recordId, recordIds));
+
+  // 查询分组信息
+  const groupIds = [...new Set(grRows.map(r => r.groupId))];
+  let groupMap: Record<number, { id: number; customerName: string; groupToken: string; status: string }> = {};
+  if (groupIds.length > 0) {
+    const groupRows = await db
+      .select({ id: groups.id, customerName: groups.customerName, groupToken: groups.groupToken, status: groups.status })
+      .from(groups)
+      .where(inArray(groups.id, groupIds));
+    groupRows.forEach(g => { groupMap[g.id] = g; });
+  }
+
+  // 构建记录ID -> 分组列表的映射
+  const recordGroupMap: Record<number, typeof groupMap[number][]> = {};
+  grRows.forEach(gr => {
+    if (!recordGroupMap[gr.recordId]) recordGroupMap[gr.recordId] = [];
+    if (groupMap[gr.groupId]) recordGroupMap[gr.recordId].push(groupMap[gr.groupId]);
+  });
+
+  return allRecords.map(r => ({
+    ...r,
+    groups: recordGroupMap[r.id] || [],
+  }));
+}
+
+/**
  * 插入单条记录，按 accelerateIp+acceleratePort 去重（upsert）
  * 重复时更新 vmessLink、clashLink、protocol、batchId
  */

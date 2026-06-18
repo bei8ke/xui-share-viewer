@@ -1,4 +1,3 @@
-import { trpc } from "@/lib/trpc";
 import { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,14 +27,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Copy, FolderPlus, FolderSymlink, RefreshCw, QrCode, Zap, Trash2, ChevronDown } from "lucide-react";
+import { Copy, FolderPlus, FolderSymlink, RefreshCw, QrCode, Zap, Trash2, ChevronDown, LayoutList, Layers } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import CreateGroupDialog from "./CreateGroupDialog";
 import AddToGroupDialog from "./AddToGroupDialog";
+import { trpc } from "@/lib/trpc";
 
 type FilterType = "all" | "assigned" | "unassigned";
+type ViewMode = "flat" | "grouped";
 
 // Clash 客户端列表
 const CLASH_CLIENTS = [
@@ -59,31 +60,30 @@ function ClashImportDropdown({ clashLink, onStopPropagation }: { clashLink: stri
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const handleSelect = (scheme: string) => {
+  const handleImport = (scheme: string) => {
+    const url = `${scheme}://install-config?url=${encodeURIComponent(clashLink)}`;
+    window.location.href = url;
     setOpen(false);
-    const encoded = encodeURIComponent(clashLink);
-    window.location.href = `${scheme}://install-config?url=${encoded}`;
-    toast.info("正在唤醒 Clash 客户端导入订阅...", { duration: 3000 });
   };
 
   return (
-    <div ref={ref} className="relative inline-block">
+    <div ref={ref} className="relative inline-block" onClick={(e) => { e.stopPropagation(); onStopPropagation?.(e); }}>
       <button
-        onClick={(e) => { onStopPropagation?.(e); setOpen(v => !v); }}
-        className="flex items-center gap-1 text-xs text-pink-400 hover:text-pink-300 transition-colors"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
         title="一键导入 Clash"
       >
         <Zap className="w-3 h-3" />
         导入
-        <ChevronDown className={`w-2.5 h-2.5 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className="w-3 h-3" />
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 left-0 min-w-[180px] rounded-xl border border-white/20 bg-gray-900/95 backdrop-blur-sm shadow-xl overflow-hidden">
-          {CLASH_CLIENTS.map(c => (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg py-1 min-w-[180px]">
+          {CLASH_CLIENTS.map((c) => (
             <button
               key={c.scheme}
-              onClick={(e) => { e.stopPropagation(); handleSelect(c.scheme); }}
-              className="w-full text-left px-4 py-2.5 text-xs text-white/80 hover:bg-white/10 hover:text-white transition-colors duration-100"
+              onClick={() => handleImport(c.scheme)}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent transition-colors"
             >
               {c.label}
             </button>
@@ -94,7 +94,31 @@ function ClashImportDropdown({ clashLink, onStopPropagation }: { clashLink: stri
   );
 }
 
-// 二维码预览对话框（动态生成）
+// 分组标签
+function GroupBadges({ groups }: { groups: { id: number; customerName: string; status: string }[] }) {
+  if (!groups || groups.length === 0) {
+    return <span className="text-muted-foreground text-xs">未分配</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {groups.map((g) => (
+        <Badge
+          key={g.id}
+          variant="outline"
+          className={`text-xs px-1.5 py-0 ${
+            g.status === "active"
+              ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/10"
+              : "border-orange-500/50 text-orange-400 bg-orange-500/10"
+          }`}
+        >
+          {g.customerName}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+// VMess 二维码弹窗
 function QrPreviewDialog({ vmessLink, onClose }: { vmessLink: string; onClose: () => void }) {
   return (
     <Dialog open onOpenChange={onClose}>
@@ -112,8 +136,136 @@ function QrPreviewDialog({ vmessLink, onClose }: { vmessLink: string; onClose: (
   );
 }
 
+type RecordWithGroups = {
+  id: number;
+  panelId: string;
+  remark: string | null;
+  accelerateIp: string;
+  acceleratePort: number;
+  protocol: string | null;
+  status: string;
+  vmessLink: string | null;
+  clashLink: string | null;
+  createdAt: Date;
+  groups: { id: number; customerName: string; groupToken: string; status: string }[];
+};
+
+// 单行记录渲染（供平铺和分组两种模式复用）
+function RecordRow({
+  record,
+  selected,
+  onToggle,
+  onDelete,
+  onShowQr,
+  copyText,
+  showGroupCol,
+}: {
+  record: RecordWithGroups;
+  selected: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+  onShowQr: () => void;
+  copyText: (t: string) => void;
+  showGroupCol: boolean;
+}) {
+  const statusBadge = (status: string) => {
+    const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+      success: { label: "成功", variant: "default" },
+      failed: { label: "失败", variant: "destructive" },
+      skipped: { label: "跳过", variant: "secondary" },
+    };
+    const s = map[status] || { label: status, variant: "outline" as const };
+    return <Badge variant={s.variant}>{s.label}</Badge>;
+  };
+
+  return (
+    <TableRow
+      className={`border-white/10 cursor-pointer transition-colors ${selected ? "bg-primary/10" : ""}`}
+      onClick={onToggle}
+    >
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <Checkbox checked={selected} onCheckedChange={onToggle} />
+      </TableCell>
+      <TableCell className="font-mono text-xs max-w-[140px] truncate">{record.panelId}</TableCell>
+      <TableCell className="text-sm max-w-[100px] truncate">{record.remark || "-"}</TableCell>
+      <TableCell className="font-mono text-xs whitespace-nowrap">
+        {record.accelerateIp}:{record.acceleratePort}
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline" className="text-xs">
+          {(record.protocol || "vmess").toUpperCase()}
+        </Badge>
+      </TableCell>
+      <TableCell>{statusBadge(record.status)}</TableCell>
+      {showGroupCol && (
+        <TableCell>
+          <GroupBadges groups={record.groups} />
+        </TableCell>
+      )}
+      <TableCell>
+        {record.vmessLink ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); copyText(record.vmessLink!); }}
+            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            <Copy className="w-3 h-3" />
+            复制
+          </button>
+        ) : (
+          <span className="text-muted-foreground text-xs">-</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {record.clashLink ? (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={(e) => { e.stopPropagation(); copyText(record.clashLink!); }}
+              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              <Copy className="w-3 h-3" />
+              复制
+            </button>
+            <ClashImportDropdown
+              clashLink={record.clashLink!}
+              onStopPropagation={(e) => e.stopPropagation()}
+            />
+          </div>
+        ) : (
+          <span className="text-muted-foreground text-xs">-</span>
+        )}
+      </TableCell>
+      <TableCell>
+        {record.vmessLink ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onShowQr(); }}
+            className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+          >
+            <QrCode className="w-3 h-3" />
+            查看
+          </button>
+        ) : (
+          <span className="text-muted-foreground text-xs">-</span>
+        )}
+      </TableCell>
+      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+        {new Date(record.createdAt).toLocaleString("zh-CN")}
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={onDelete}
+          className="text-red-400 hover:text-red-300 transition-colors p-1 rounded"
+          title="删除"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 export default function Records() {
   const [filter, setFilter] = useState<FilterType>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("flat");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showAddToGroup, setShowAddToGroup] = useState(false);
@@ -169,16 +321,53 @@ export default function Records() {
     }
   };
 
+  // 按分组聚合记录
+  const groupedView = () => {
+    const ungrouped: RecordWithGroups[] = [];
+    const groupMap: Record<string, { groupId: number; groupName: string; status: string; records: RecordWithGroups[] }> = {};
 
-  const statusBadge = (status: string) => {
-    const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-      success: { label: "成功", variant: "default" },
-      failed: { label: "失败", variant: "destructive" },
-      skipped: { label: "跳过", variant: "secondary" },
-    };
-    const s = map[status] || { label: status, variant: "outline" as const };
-    return <Badge variant={s.variant}>{s.label}</Badge>;
+    (records as RecordWithGroups[]).forEach((r) => {
+      if (!r.groups || r.groups.length === 0) {
+        ungrouped.push(r);
+      } else {
+        r.groups.forEach((g) => {
+          const key = String(g.id);
+          if (!groupMap[key]) {
+            groupMap[key] = { groupId: g.id, groupName: g.customerName, status: g.status, records: [] };
+          }
+          groupMap[key].records.push(r);
+        });
+      }
+    });
+
+    return { groups: Object.values(groupMap).sort((a, b) => a.groupName.localeCompare(b.groupName)), ungrouped };
   };
+
+  const tableColSpan = 12; // 含分组列时的总列数
+
+  const tableHeader = (showGroupCol: boolean) => (
+    <TableHeader>
+      <TableRow className="border-white/10 hover:bg-transparent">
+        <TableHead className="w-10">
+          <Checkbox
+            checked={records.length > 0 && selectedIds.size === records.length}
+            onCheckedChange={toggleSelectAll}
+          />
+        </TableHead>
+        <TableHead>面板 ID</TableHead>
+        <TableHead>备注</TableHead>
+        <TableHead>加速IP:端口</TableHead>
+        <TableHead>协议</TableHead>
+        <TableHead>状态</TableHead>
+        {showGroupCol && <TableHead>所属分组</TableHead>}
+        <TableHead>VMess 链接</TableHead>
+        <TableHead>Clash 订阅</TableHead>
+        <TableHead>二维码</TableHead>
+        <TableHead>创建时间</TableHead>
+        <TableHead className="w-16">操作</TableHead>
+      </TableRow>
+    </TableHeader>
+  );
 
   return (
     <div className="p-6 space-y-4">
@@ -203,6 +392,30 @@ export default function Records() {
               <SelectItem value="assigned">已分配</SelectItem>
             </SelectContent>
           </Select>
+
+          {/* 视图切换 */}
+          <div className="flex rounded-lg border border-white/10 overflow-hidden">
+            <button
+              onClick={() => setViewMode("flat")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
+                viewMode === "flat" ? "bg-primary text-primary-foreground" : "hover:bg-white/5 text-muted-foreground"
+              }`}
+              title="平铺展示"
+            >
+              <LayoutList className="w-3.5 h-3.5" />
+              平铺
+            </button>
+            <button
+              onClick={() => setViewMode("grouped")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors ${
+                viewMode === "grouped" ? "bg-primary text-primary-foreground" : "hover:bg-white/5 text-muted-foreground"
+              }`}
+              title="按分组展示"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              按分组
+            </button>
+          </div>
 
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="w-4 h-4 mr-1.5" />
@@ -232,136 +445,129 @@ export default function Records() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-white/10 hover:bg-transparent">
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={records.length > 0 && selectedIds.size === records.length}
-                    onCheckedChange={toggleSelectAll}
-                  />
-                </TableHead>
-                <TableHead>面板 ID</TableHead>
-                <TableHead>备注</TableHead>
-                <TableHead>加速IP:端口</TableHead>
-                <TableHead>协议</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>VMess 链接</TableHead>
-                <TableHead>Clash 订阅</TableHead>
-                <TableHead>二维码</TableHead>
-                <TableHead>创建时间</TableHead>
-                <TableHead className="w-16">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
-                    加载中...
-                  </TableCell>
-                </TableRow>
-              ) : records.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center py-12 text-muted-foreground">
-                    暂无记录
-                  </TableCell>
-                </TableRow>
-              ) : (
-                records.map((record) => (
-                  <TableRow
-                    key={record.id}
-                    className={`border-white/10 cursor-pointer transition-colors ${
-                      selectedIds.has(record.id) ? "bg-primary/10" : ""
-                    }`}
-                    onClick={() => toggleSelect(record.id)}
-                  >
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedIds.has(record.id)}
-                        onCheckedChange={() => toggleSelect(record.id)}
-                      />
-                    </TableCell>
-                    <TableCell className="font-mono text-xs max-w-[140px] truncate">
-                      {record.panelId}
-                    </TableCell>
-                    <TableCell className="text-sm max-w-[100px] truncate">
-                      {record.remark || "-"}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs whitespace-nowrap">
-                      {record.accelerateIp}:{record.acceleratePort}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {(record.protocol || "vmess").toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{statusBadge(record.status)}</TableCell>
-                    <TableCell>
-                      {record.vmessLink ? (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); copyText(record.vmessLink!); }}
-                          className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                        >
-                          <Copy className="w-3 h-3" />
-                          复制
-                        </button>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {record.clashLink ? (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); copyText(record.clashLink!); }}
-                            className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                          >
-                            <Copy className="w-3 h-3" />
-                            复制
-                          </button>
-                          <ClashImportDropdown
-                            clashLink={record.clashLink!}
-                            onStopPropagation={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {record.vmessLink ? (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setQrVmessLink(record.vmessLink!); }}
-                          className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-                        >
-                          <QrCode className="w-3 h-3" />
-                          查看
-                        </button>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(record.createdAt).toLocaleString("zh-CN")}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => setDeleteConfirmId(record.id)}
-                        className="text-red-400 hover:text-red-300 transition-colors p-1 rounded"
-                        title="删除"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+      {/* 平铺模式 */}
+      {viewMode === "flat" && (
+        <div className="rounded-xl border border-white/10 overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table>
+              {tableHeader(true)}
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={tableColSpan} className="text-center py-12 text-muted-foreground">
+                      加载中...
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : records.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={tableColSpan} className="text-center py-12 text-muted-foreground">
+                      暂无记录
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (records as RecordWithGroups[]).map((record) => (
+                    <RecordRow
+                      key={record.id}
+                      record={record}
+                      selected={selectedIds.has(record.id)}
+                      onToggle={() => toggleSelect(record.id)}
+                      onDelete={() => setDeleteConfirmId(record.id)}
+                      onShowQr={() => setQrVmessLink(record.vmessLink!)}
+                      copyText={copyText}
+                      showGroupCol={true}
+                    />
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* 按分组模式 */}
+      {viewMode === "grouped" && (
+        <div className="space-y-6">
+          {isLoading ? (
+            <div className="text-center py-12 text-muted-foreground">加载中...</div>
+          ) : records.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">暂无记录</div>
+          ) : (() => {
+            const { groups: grps, ungrouped } = groupedView();
+            return (
+              <>
+                {grps.map((g) => (
+                  <div key={g.groupId} className="rounded-xl border border-white/10 overflow-hidden">
+                    <div className={`flex items-center gap-3 px-4 py-3 border-b border-white/10 ${
+                      g.status === "active" ? "bg-emerald-500/10" : "bg-orange-500/10"
+                    }`}>
+                      <Layers className="w-4 h-4 text-muted-foreground" />
+                      <span className="font-semibold text-sm">{g.groupName}</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs ${
+                          g.status === "active"
+                            ? "border-emerald-500/50 text-emerald-400"
+                            : "border-orange-500/50 text-orange-400"
+                        }`}
+                      >
+                        {g.status === "active" ? "启用" : "禁用"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground ml-auto">{g.records.length} 条记录</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        {tableHeader(false)}
+                        <TableBody>
+                          {g.records.map((record) => (
+                            <RecordRow
+                              key={record.id}
+                              record={record}
+                              selected={selectedIds.has(record.id)}
+                              onToggle={() => toggleSelect(record.id)}
+                              onDelete={() => setDeleteConfirmId(record.id)}
+                              onShowQr={() => setQrVmessLink(record.vmessLink!)}
+                              copyText={copyText}
+                              showGroupCol={false}
+                            />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ))}
+                {ungrouped.length > 0 && (
+                  <div className="rounded-xl border border-white/10 overflow-hidden">
+                    <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-white/5">
+                      <Layers className="w-4 h-4 text-muted-foreground" />
+                      <span className="font-semibold text-sm text-muted-foreground">未分配</span>
+                      <span className="text-xs text-muted-foreground ml-auto">{ungrouped.length} 条记录</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        {tableHeader(false)}
+                        <TableBody>
+                          {ungrouped.map((record) => (
+                            <RecordRow
+                              key={record.id}
+                              record={record}
+                              selected={selectedIds.has(record.id)}
+                              onToggle={() => toggleSelect(record.id)}
+                              onDelete={() => setDeleteConfirmId(record.id)}
+                              onShowQr={() => setQrVmessLink(record.vmessLink!)}
+                              copyText={copyText}
+                              showGroupCol={false}
+                            />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      )}
 
       <CreateGroupDialog
         open={showCreateGroup}

@@ -15,6 +15,7 @@ import {
   getAllApiKeys,
   getAllGroups,
   getAllRecords,
+  getAllRecordsWithGroups,
   getGroupById,
   getGroupByToken,
   getGroupsWithRecordCount,
@@ -102,7 +103,7 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const filter =
           input.filter === "all" ? undefined : (input.filter as "assigned" | "unassigned");
-        return getAllRecords(filter);
+        return getAllRecordsWithGroups(filter);
       }),
 
     // 删除单条记录
