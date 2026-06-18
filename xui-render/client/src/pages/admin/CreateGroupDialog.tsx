@@ -13,7 +13,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Copy, Check, Users } from "lucide-react";
-import { useState as useLocalState } from "react";
 
 interface Props {
   open: boolean;
@@ -67,17 +66,44 @@ export default function CreateGroupDialog({ open, onClose, selectedIds, onSucces
     }
   };
 
-  const handleClose = () => {
+  // 重置内部状态，不触发 onSuccess（用于取消/关闭）
+  const resetState = () => {
     setCustomerName("");
     setDescription("");
     setCreatedLink(null);
     setCopied(false);
+  };
+
+  // 用户点击"完成"或关闭弹窗（已成功创建后）
+  const handleDone = () => {
+    const wasCreated = !!createdLink;
+    resetState();
     onClose();
-    if (createdLink) onSuccess();
+    // 在 onClose 之后再调用 onSuccess，避免父组件状态变更与 Dialog 动画同时触发 DOM 冲突
+    if (wasCreated) {
+      setTimeout(() => onSuccess(), 0);
+    }
+  };
+
+  // 用户点击"取消"或 ESC 关闭（未创建）
+  const handleCancel = () => {
+    resetState();
+    onClose();
+  };
+
+  // Dialog 的 onOpenChange 回调：open=false 时触发关闭
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      if (createdLink) {
+        handleDone();
+      } else {
+        handleCancel();
+      }
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -117,7 +143,7 @@ export default function CreateGroupDialog({ open, onClose, selectedIds, onSucces
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="outline" onClick={handleCancel}>
                 取消
               </Button>
               <Button
@@ -166,7 +192,7 @@ export default function CreateGroupDialog({ open, onClose, selectedIds, onSucces
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="outline" onClick={handleDone}>
                 完成
               </Button>
             </DialogFooter>
