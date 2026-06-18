@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,13 +28,71 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Copy, FolderPlus, RefreshCw, QrCode, Zap, Trash2 } from "lucide-react";
+import { Copy, FolderPlus, FolderSymlink, RefreshCw, QrCode, Zap, Trash2, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import CreateGroupDialog from "./CreateGroupDialog";
+import AddToGroupDialog from "./AddToGroupDialog";
 
 type FilterType = "all" | "assigned" | "unassigned";
+
+// Clash 客户端列表
+const CLASH_CLIENTS = [
+  { label: "Clash for Windows",      scheme: "clash" },
+  { label: "Clash Verge / Nyanpasu", scheme: "clash-verge" },
+  { label: "ClashX (Mac)",           scheme: "clashx" },
+  { label: "ClashX Pro (Mac)",       scheme: "clashx-pro" },
+];
+
+// Clash 导入下拉按钮
+function ClashImportDropdown({ clashLink, onStopPropagation }: { clashLink: string; onStopPropagation?: (e: React.MouseEvent) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleSelect = (scheme: string) => {
+    setOpen(false);
+    const encoded = encodeURIComponent(clashLink);
+    window.location.href = `${scheme}://install-config?url=${encoded}`;
+    toast.info("正在唤醒 Clash 客户端导入订阅...", { duration: 3000 });
+  };
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        onClick={(e) => { onStopPropagation?.(e); setOpen(v => !v); }}
+        className="flex items-center gap-1 text-xs text-pink-400 hover:text-pink-300 transition-colors"
+        title="一键导入 Clash"
+      >
+        <Zap className="w-3 h-3" />
+        导入
+        <ChevronDown className={`w-2.5 h-2.5 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 left-0 min-w-[180px] rounded-xl border border-white/20 bg-gray-900/95 backdrop-blur-sm shadow-xl overflow-hidden">
+          {CLASH_CLIENTS.map(c => (
+            <button
+              key={c.scheme}
+              onClick={(e) => { e.stopPropagation(); handleSelect(c.scheme); }}
+              className="w-full text-left px-4 py-2.5 text-xs text-white/80 hover:bg-white/10 hover:text-white transition-colors duration-100"
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // 二维码预览对话框（动态生成）
 function QrPreviewDialog({ vmessLink, onClose }: { vmessLink: string; onClose: () => void }) {
@@ -58,6 +116,7 @@ export default function Records() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showAddToGroup, setShowAddToGroup] = useState(false);
   const [qrVmessLink, setQrVmessLink] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
@@ -110,18 +169,6 @@ export default function Records() {
     }
   };
 
-  const importToClash = (clashLink: string) => {
-    // 尝试多种 Clash 协议唤醒方式
-    const encodedUrl = encodeURIComponent(clashLink);
-    const protocols = [
-      `clash://install-config?url=${encodedUrl}`,
-      `clash-verge://install-config?url=${encodedUrl}`,
-      `clashx://install-config?url=${encodedUrl}`,
-    ];
-    // 依次尝试
-    window.location.href = protocols[0];
-    toast.info("正在唤醒 Clash 客户端...", { duration: 3000 });
-  };
 
   const statusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -167,6 +214,10 @@ export default function Records() {
               <Button size="sm" onClick={() => setShowCreateGroup(true)}>
                 <FolderPlus className="w-4 h-4 mr-1.5" />
                 创建分组（{selectedIds.size}）
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowAddToGroup(true)}>
+                <FolderSymlink className="w-4 h-4 mr-1.5" />
+                添加到分组（{selectedIds.size}）
               </Button>
               <Button
                 size="sm"
@@ -270,14 +321,10 @@ export default function Records() {
                             <Copy className="w-3 h-3" />
                             复制
                           </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); importToClash(record.clashLink!); }}
-                            className="flex items-center gap-1 text-xs text-pink-400 hover:text-pink-300 transition-colors"
-                            title="一键导入 Clash"
-                          >
-                            <Zap className="w-3 h-3" />
-                            导入
-                          </button>
+                          <ClashImportDropdown
+                            clashLink={record.clashLink!}
+                            onStopPropagation={(e) => e.stopPropagation()}
+                          />
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-xs">-</span>
@@ -323,6 +370,17 @@ export default function Records() {
         onSuccess={() => {
           setSelectedIds(new Set());
           setShowCreateGroup(false);
+          refetch();
+        }}
+      />
+
+      <AddToGroupDialog
+        open={showAddToGroup}
+        onClose={() => setShowAddToGroup(false)}
+        selectedIds={Array.from(selectedIds)}
+        onSuccess={() => {
+          setSelectedIds(new Set());
+          setShowAddToGroup(false);
           refetch();
         }}
       />

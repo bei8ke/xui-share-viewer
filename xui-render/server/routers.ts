@@ -142,7 +142,7 @@ export const appRouter = router({
         z.object({
           customerName: z.string().min(1).max(128),
           description: z.string().max(500).optional(),
-          recordIds: z.array(z.number()).min(1),
+          recordIds: z.array(z.number()).optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -157,7 +157,9 @@ export const appRouter = router({
         const group = await getGroupByToken(groupToken);
         if (!group) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        await addRecordsToGroup(group.id, input.recordIds);
+        if (input.recordIds && input.recordIds.length > 0) {
+          await addRecordsToGroup(group.id, input.recordIds);
+        }
 
         return { groupId: group.id, groupToken };
       }),

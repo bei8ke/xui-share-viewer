@@ -20,19 +20,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Copy, Eye, Power, PowerOff, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, Eye, Pencil, Plus, Power, PowerOff, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import GroupDetailSheet from "./GroupDetailSheet";
+import CreateGroupDialog from "./CreateGroupDialog";
+import EditGroupDialog from "./EditGroupDialog";
 
 export default function Groups() {
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [detailGroupId, setDetailGroupId] = useState<number | null>(null);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [editGroupId, setEditGroupId] = useState<number | null>(null);
 
   const utils = trpc.useUtils();
   const { data: groups = [], isLoading, refetch } = trpc.admin.getGroups.useQuery();
@@ -66,6 +64,8 @@ export default function Groups() {
     }
   };
 
+  const editTarget = groups.find((g) => g.id === editGroupId) ?? null;
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -73,10 +73,16 @@ export default function Groups() {
           <h2 className="text-2xl font-bold">分组管理</h2>
           <p className="text-muted-foreground mt-1 text-sm">共 {groups.length} 个客户分组</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="w-4 h-4 mr-1.5" />
-          刷新
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => setShowCreateGroup(true)}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            新建分组
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="w-4 h-4 mr-1.5" />
+            刷新
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-xl border border-white/10 overflow-hidden">
@@ -102,7 +108,7 @@ export default function Groups() {
               ) : groups.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
-                    暂无分组，请在「所有记录」页面选择记录后创建分组
+                    暂无分组，点击「新建分组」或在「所有记录」页面选择记录后创建分组
                   </TableCell>
                 </TableRow>
               ) : (
@@ -139,6 +145,15 @@ export default function Groups() {
                           onClick={() => setDetailGroupId(group.id)}
                         >
                           <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          title="编辑分组"
+                          onClick={() => setEditGroupId(group.id)}
+                        >
+                          <Pencil className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -185,6 +200,30 @@ export default function Groups() {
           </Table>
         </div>
       </div>
+
+      {/* 新建分组对话框（空分组，不需要选择记录） */}
+      <CreateGroupDialog
+        open={showCreateGroup}
+        onClose={() => setShowCreateGroup(false)}
+        selectedIds={[]}
+        onSuccess={() => {
+          setShowCreateGroup(false);
+          refetch();
+        }}
+      />
+
+      {/* 编辑分组对话框 */}
+      {editTarget && (
+        <EditGroupDialog
+          open={editGroupId !== null}
+          onClose={() => setEditGroupId(null)}
+          group={editTarget}
+          onSuccess={() => {
+            setEditGroupId(null);
+            utils.admin.getGroups.invalidate();
+          }}
+        />
+      )}
 
       {/* 删除确认弹窗 */}
       <AlertDialog open={deleteTarget !== null} onOpenChange={() => setDeleteTarget(null)}>

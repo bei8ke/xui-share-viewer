@@ -1,9 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Copy, Check, Shield, AlertTriangle, Wifi, Server,
-  Link2, QrCode, LayoutGrid, List, Zap, Info
+  Link2, QrCode, LayoutGrid, List, Zap, Info, ChevronDown
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
@@ -36,22 +36,61 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   );
 }
 
+// Clash 客户端列表
+const CLASH_CLIENTS = [
+  { label: "Clash for Windows",      scheme: "clash" },
+  { label: "Clash Verge / Nyanpasu", scheme: "clash-verge" },
+  { label: "ClashX (Mac)",           scheme: "clashx" },
+  { label: "ClashX Pro (Mac)",       scheme: "clashx-pro" },
+];
+
 // ─── Clash 导入按钮 ───────────────────────────────────────────────────────────
 function ClashImportButton({ clashLink }: { clashLink: string }) {
-  const handleImport = () => {
-    window.location.href = clashLink;
-    toast.info("正在唤醒 Clash 客户端...", { duration: 3000 });
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleSelect = (scheme: string) => {
+    setOpen(false);
+    const encoded = encodeURIComponent(clashLink);
+    window.location.href = `${scheme}://install-config?url=${encoded}`;
+    toast.info(`正在唤醒 Clash 客户端导入订阅...`, { duration: 3000 });
   };
+
   return (
-    <button
-      onClick={handleImport}
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150
-        bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 hover:text-pink-200 border border-pink-500/30 hover:border-pink-400/50 active:scale-95"
-      title="一键导入到 Clash/ClashX/ClashVerge"
-    >
-      <Zap className="w-3.5 h-3.5" />
-      导入 Clash
-    </button>
+    <div ref={ref} className="relative inline-block">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150
+          bg-pink-500/20 hover:bg-pink-500/30 text-pink-300 hover:text-pink-200 border border-pink-500/30 hover:border-pink-400/50 active:scale-95"
+        title="一键导入到 Clash 客户端"
+      >
+        <Zap className="w-3.5 h-3.5" />
+        导入 Clash
+        <ChevronDown className={`w-3 h-3 transition-transform duration-150 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 left-0 min-w-[190px] rounded-xl border border-white/20 bg-gray-900/95 backdrop-blur-sm shadow-xl overflow-hidden">
+          {CLASH_CLIENTS.map(c => (
+            <button
+              key={c.scheme}
+              onClick={() => handleSelect(c.scheme)}
+              className="w-full text-left px-4 py-2.5 text-xs text-white/80 hover:bg-white/10 hover:text-white transition-colors duration-100"
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
