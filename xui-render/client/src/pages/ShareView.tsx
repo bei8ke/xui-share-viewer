@@ -3,7 +3,8 @@ import { useParams } from "wouter";
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Copy, Check, Shield, AlertTriangle, Wifi, Server,
-  Link2, QrCode, LayoutGrid, List, Zap, Info, ChevronDown
+  Link2, QrCode, LayoutGrid, List, Zap, Info, ChevronDown,
+  MessageSquarePlus, X, Pencil
 } from "lucide-react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
@@ -106,6 +107,131 @@ type RecordData = {
   status: string;
 };
 
+// ─── 节点备注钩子（存储在 localStorage） ─────────────────────────────────────
+function useLocalRemark(token: string, recordId: number) {
+  const key = `remark_${token}_${recordId}`;
+  const [remark, setRemark] = useState<string>(() => {
+    try { return localStorage.getItem(key) || ""; } catch { return ""; }
+  });
+  const save = useCallback((val: string) => {
+    setRemark(val);
+    try {
+      if (val) localStorage.setItem(key, val);
+      else localStorage.removeItem(key);
+    } catch { /* ignore */ }
+  }, [key]);
+  return [remark, save] as const;
+}
+
+// ─── 备注编辑弹窗 ─────────────────────────────────────────────────────────────
+function RemarkPopover({
+  token,
+  recordId,
+  nodeName,
+}: {
+  token: string;
+  recordId: number;
+  nodeName: string;
+}) {
+  const [remark, saveRemark] = useLocalRemark(token, recordId);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(remark);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setDraft(remark);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open, remark]);
+
+  // 打开时聚焦
+  useEffect(() => {
+    if (open) {
+      setDraft(remark);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open, remark]);
+
+  const handleSave = () => {
+    saveRemark(draft.trim());
+    setOpen(false);
+    toast.success(draft.trim() ? "备注已保存" : "备注已清除");
+  };
+
+  return (
+    <div ref={popoverRef} className="relative inline-block">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 active:scale-95
+          ${remark
+            ? "bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30"
+            : "bg-white/10 hover:bg-white/20 text-white/60 hover:text-white border border-white/20 hover:border-white/40"
+          }`}
+        title={remark ? `我的备注：${remark}` : "添加我的备注"}
+      >
+        {remark ? <Pencil className="w-3.5 h-3.5" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
+        {remark ? "编辑备注" : "备注"}
+      </button>
+
+      {open && (
+        <div className="absolute z-50 right-0 mt-2 w-72 rounded-xl border border-white/20 bg-gray-900/98 backdrop-blur-sm shadow-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-semibold text-white/80">我的备注</div>
+            <button onClick={() => { setOpen(false); setDraft(remark); }} className="text-white/40 hover:text-white/70 transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="text-xs text-white/40 mb-2 truncate">{nodeName}</div>
+          <input
+            ref={inputRef}
+            type="text"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") { setOpen(false); setDraft(remark); } }}
+            placeholder="输入备注（仅本设备可见）"
+            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-blue-400/60 focus:bg-white/15 transition-all"
+            maxLength={100}
+          />
+          <div className="flex items-center justify-between mt-3 gap-2">
+            <span className="text-xs text-white/30">{draft.length}/100 · 仅存本设备</span>
+            <div className="flex gap-2">
+              {remark && (
+                <button
+                  onClick={() => { saveRemark(""); setDraft(""); setOpen(false); toast.success("备注已清除"); }}
+                  className="px-3 py-1.5 rounded-lg text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:bg-red-500/10 transition-all"
+                >
+                  清除
+                </button>
+              )}
+              <button
+                onClick={handleSave}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/30 hover:bg-blue-500/50 text-blue-300 border border-blue-500/40 transition-all"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 已有备注时在按钮下方显示备注文字 */}
+      {remark && !open && (
+        <div className="absolute right-0 top-full mt-1 max-w-[200px] text-xs text-yellow-300/80 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-2 py-1 truncate pointer-events-none z-10">
+          {remark}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── 内联二维码组件 ──────────────────────────────────────────────────────────
 function InlineQrCode({ value, expanded, onToggle }: { value: string; expanded: boolean; onToggle: () => void }) {
   return (
@@ -134,8 +260,9 @@ function InlineQrCode({ value, expanded, onToggle }: { value: string; expanded: 
 }
 
 // ─── 卡片模式 ─────────────────────────────────────────────────────────────────
-function RecordCard({ record, index }: { record: RecordData; index: number }) {
+function RecordCard({ record, index, token }: { record: RecordData; index: number; token: string }) {
   const [qrExpanded, setQrExpanded] = useState(true);
+  const nodeName = record.remark || `节点 ${index + 1}`;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden">
@@ -146,13 +273,16 @@ function RecordCard({ record, index }: { record: RecordData; index: number }) {
             {index + 1}
           </div>
           <div>
-            <div className="text-white font-semibold text-sm">{record.remark || `节点 ${index + 1}`}</div>
+            <div className="text-white font-semibold text-sm">{nodeName}</div>
             <div className="text-white/50 text-xs mt-0.5 font-mono">{record.accelerateIp}:{record.acceleratePort}</div>
           </div>
         </div>
-        <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
-          {record.protocol?.toUpperCase() || "VMESS"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
+            {record.protocol?.toUpperCase() || "VMESS"}
+          </span>
+          <RemarkPopover token={token} recordId={record.id} nodeName={nodeName} />
+        </div>
       </div>
 
       {/* 卡片内容 */}
@@ -212,8 +342,9 @@ function RecordCard({ record, index }: { record: RecordData; index: number }) {
 }
 
 // ─── 列表模式（表格行） ───────────────────────────────────────────────────────
-function RecordListRow({ record, index }: { record: RecordData; index: number }) {
+function RecordListRow({ record, index, token }: { record: RecordData; index: number; token: string }) {
   const [qrOpen, setQrOpen] = useState(false);
+  const nodeName = record.remark || `节点 ${index + 1}`;
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
@@ -225,7 +356,7 @@ function RecordListRow({ record, index }: { record: RecordData; index: number })
             {index + 1}
           </span>
           <div className="min-w-0">
-            <div className="text-white text-sm font-medium truncate">{record.remark || `节点 ${index + 1}`}</div>
+            <div className="text-white text-sm font-medium truncate">{nodeName}</div>
             <div className="text-white/40 text-xs font-mono">{record.accelerateIp}:{record.acceleratePort}</div>
           </div>
         </div>
@@ -256,6 +387,8 @@ function RecordListRow({ record, index }: { record: RecordData; index: number })
               {qrOpen ? "收起" : "二维码"}
             </button>
           )}
+          {/* 备注按钮 */}
+          <RemarkPopover token={token} recordId={record.id} nodeName={nodeName} />
         </div>
       </div>
 
@@ -328,7 +461,8 @@ function LoadingSkeleton() {
 export default function ShareView() {
   const params = useParams<{ token: string }>();
   const token = params.token || "";
-  const [viewMode, setViewMode] = useState<ViewMode>("card");
+  // 默认列表模式
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const { data, isLoading, error } = trpc.share.getByToken.useQuery(
     { token },
@@ -427,13 +561,13 @@ export default function ShareView() {
         ) : viewMode === "card" ? (
           <div className="flex flex-col gap-4">
             {records.map((record, index) => (
-              <RecordCard key={record.id} record={record} index={index} />
+              <RecordCard key={record.id} record={record} index={index} token={token} />
             ))}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {records.map((record, index) => (
-              <RecordListRow key={record.id} record={record} index={index} />
+              <RecordListRow key={record.id} record={record} index={index} token={token} />
             ))}
           </div>
         )}
@@ -447,6 +581,7 @@ export default function ShareView() {
                 <p><span className="text-white/50 font-medium">VMess 链接：</span>可复制后在 v2rayN、Shadowrocket 等客户端中手动添加节点。</p>
                 <p><span className="text-white/50 font-medium">导入 Clash：</span>点击「导入 Clash」按钮可直接唤醒 Clash / ClashX / ClashVerge 等客户端并自动导入节点。</p>
                 <p><span className="text-white/50 font-medium">二维码：</span>可使用手机客户端（如 Shadowrocket）扫码导入。</p>
+                <p><span className="text-white/50 font-medium">备注：</span>点击「备注」可为节点添加个人标注，仅保存在本设备浏览器中。</p>
               </div>
             </div>
           </div>

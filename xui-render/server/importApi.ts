@@ -10,6 +10,7 @@ import {
   getGroupsWithRecordCount,
   insertRecordsBatch,
   updateApiKeyUsage,
+  getGroupIdByRecordNode,
 } from "./db";
 import { records, groups } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
@@ -157,11 +158,33 @@ export function registerImportApi(app: Express) {
 
       if (auth.keyId) await updateApiKeyUsage(auth.keyId);
 
-      // ─── 分组关联逻辑 ─────────────────────────────────────────────────────
+      // ─── 分组关联逻辑 ─────────────────────────────────────────────────────────
       let shareUrl: string | undefined;
       let groupToken: string | undefined;
       let groupId: number | undefined;
       let isNewGroup = false;
+
+      // ─── 自动匹配模式（auto_match: true） ──────────────────────────────────────
+      // 每条记录独立根据 accelerateIp+acceleratePort 匹配已有分组
+      // 匹配到则更新对应分组，未匹配则不关联任何分组（即进入“无分组”状态）
+      if (body.auto_match === true) {
+        for (let i = 0; i < dataList.length; i++) {
+          const d = dataList[i];
+          const rid = recordIds[i];
+          if (!rid) continue;
+          const matchedGroupId = await getGroupIdByRecordNode(d.accelerateIp, d.acceleratePort);
+          if (matchedGroupId) {
+            await addRecordsToGroup(matchedGroupId, [rid]);
+          }
+          // 未匹配则不操作，记录会处于“未分配”状态
+        }
+        return res.json({
+          success: true,
+          inserted: dataList.length,
+          batch_id: batchId,
+          auto_match: true,
+        });
+      }
 
       const providedToken = body.group_token && typeof body.group_token === "string"
         ? body.group_token.trim()

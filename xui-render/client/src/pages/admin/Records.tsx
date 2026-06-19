@@ -27,12 +27,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Copy, FolderPlus, FolderSymlink, RefreshCw, QrCode, Zap, Trash2, ChevronDown, LayoutList, Layers } from "lucide-react";
+import { Copy, FolderPlus, FolderSymlink, RefreshCw, QrCode, Zap, Trash2, ChevronDown, LayoutList, Layers, PlusCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import CreateGroupDialog from "./CreateGroupDialog";
 import AddToGroupDialog from "./AddToGroupDialog";
+import AddManualRecordDialog from "./AddManualRecordDialog";
 import { trpc } from "@/lib/trpc";
 
 type FilterType = "all" | "assigned" | "unassigned";
@@ -269,6 +270,7 @@ export default function Records() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showAddToGroup, setShowAddToGroup] = useState(false);
+  const [showAddManual, setShowAddManual] = useState(false);
   const [qrVmessLink, setQrVmessLink] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
@@ -420,6 +422,11 @@ export default function Records() {
           <Button variant="outline" size="sm" onClick={() => refetch()}>
             <RefreshCw className="w-4 h-4 mr-1.5" />
             刷新
+          </Button>
+
+          <Button size="sm" variant="outline" onClick={() => setShowAddManual(true)}>
+            <PlusCircle className="w-4 h-4 mr-1.5" />
+            手动录入节点
           </Button>
 
           {selectedIds.size > 0 && (
@@ -589,6 +596,12 @@ export default function Records() {
           setShowAddToGroup(false);
           refetch();
         }}
+      />
+
+      <AddManualRecordDialog
+        open={showAddManual}
+        onClose={() => setShowAddManual(false)}
+        onSuccess={() => refetch()}
       />
 
       {qrVmessLink && (

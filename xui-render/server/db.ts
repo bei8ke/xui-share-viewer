@@ -221,6 +221,37 @@ export async function insertRecordsBatch(
 }
 
 /**
+ * 通过 accelerateIp+acceleratePort 查找该节点已属于哪个分组
+ * 返回第一个匹配的分组 ID，若不存在则返回 undefined
+ */
+export async function getGroupIdByRecordNode(
+  accelerateIp: string,
+  acceleratePort: number
+): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  // 先找到对应的记录
+  const existing = await db
+    .select({ id: records.id })
+    .from(records)
+    .where(and(eq(records.accelerateIp, accelerateIp), eq(records.acceleratePort, acceleratePort)))
+    .limit(1);
+
+  if (existing.length === 0) return undefined;
+  const recordId = existing[0].id;
+
+  // 再找该记录所属的分组
+  const gr = await db
+    .select({ groupId: groupRecords.groupId })
+    .from(groupRecords)
+    .where(eq(groupRecords.recordId, recordId))
+    .limit(1);
+
+  return gr.length > 0 ? gr[0].groupId : undefined;
+}
+
+/**
  * 删除单条记录（同时清理关联）
  */
 export async function deleteRecord(id: number) {

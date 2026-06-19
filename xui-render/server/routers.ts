@@ -26,6 +26,7 @@ import {
   updateGroup,
   updateGroupStatus,
   createApiKey,
+  insertRecord,
 } from "./db";
 import { createHash } from "crypto";
 
@@ -258,6 +259,52 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await toggleApiKey(input.keyId, input.isActive);
         return { success: true };
+      }),
+
+    // ─── 手动录入节点 ──────────────────────────────────────────────────────
+    addManualRecord: adminProcedure
+      .input(
+        z.object({
+          remark: z.string().min(1).max(256),
+          nodeLink: z.string().min(1),
+          clashLink: z.string().optional(),
+          groupId: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        // 从节点链接解析协议类型
+        let protocol = "vmess";
+        const linkLower = input.nodeLink.toLowerCase();
+        if (linkLower.startsWith("vless://")) protocol = "vless";
+        else if (linkLower.startsWith("trojan://")) protocol = "trojan";
+        else if (linkLower.startsWith("ss://")) protocol = "shadowsocks";
+        else if (linkLower.startsWith("ssr://")) protocol = "shadowsocksr";
+
+        // 手动录入节点使用唯一占位 accelerateIp，避免触发唯一约束冲突
+        const uniqueIp = `manual_${nanoid(12)}`;
+
+        const result = await insertRecord({
+          panelId: "manual",
+          inboundId: 0,
+          remark: input.remark,
+          accelerateIp: uniqueIp,
+          acceleratePort: 0,
+          vmessLink: input.nodeLink,
+          clashLink: input.clashLink || undefined,
+          protocol,
+          status: "success",
+          note: "手动录入",
+        });
+
+        // 获取新插入的记录 ID
+        const insertId = (result as unknown as { insertId: number }[])[0]?.insertId ?? 0;
+
+        // 如果指定了分组，则关联
+        if (input.groupId && insertId > 0) {
+          await addRecordsToGroup(input.groupId, [insertId]);
+        }
+
+        return { success: true, recordId: insertId };
       }),
   }),
 });
