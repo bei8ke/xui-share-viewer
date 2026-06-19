@@ -248,12 +248,6 @@ function RemarkPopover({
           {remark ? "编辑备注" : "备注"}
         </button>
         {popupContent}
-        {/* 卡片模式：备注文字显示在按钮后面（行内，不遮挡） */}
-        {remark && !open && (
-          <div className="absolute right-0 top-full mt-1 max-w-[200px] text-xs text-yellow-300/80 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-2 py-1 truncate pointer-events-none z-10">
-            {remark}
-          </div>
-        )}
       </div>
     );
   }
@@ -315,25 +309,41 @@ function InlineQrCode({ value, expanded, onToggle }: { value: string; expanded: 
 function RecordCard({ record, index, token }: { record: RecordData; index: number; token: string }) {
   const [qrExpanded, setQrExpanded] = useState(true);
   const nodeName = record.remark || `节点 ${index + 1}`;
+  // 卡片模式下独立读取备注，用于在节点名称后面显示
+  const cardRemarkKey = `remark_${token}_${record.id}`;
+  const [cardRemark, setCardRemark] = useState<string>(() => {
+    try { return localStorage.getItem(cardRemarkKey) || ""; } catch { return ""; }
+  });
+  const refreshCardRemark = useCallback(() => {
+    try { setCardRemark(localStorage.getItem(cardRemarkKey) || ""); } catch { /* ignore */ }
+  }, [cardRemarkKey]);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm overflow-hidden">
       {/* 卡片头部 */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-white/5">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
             {index + 1}
           </div>
-          <div>
-            <div className="text-white font-semibold text-sm">{nodeName}</div>
+          <div className="min-w-0">
+            {/* 节点名称 + 备注文字（显示在名称后面，同一行） */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="text-white font-semibold text-sm">{nodeName}</div>
+              {cardRemark && (
+                <div className="text-xs text-yellow-300/80 bg-yellow-500/10 border border-yellow-500/20 rounded px-1.5 py-0.5 max-w-[160px] truncate">
+                  {cardRemark}
+                </div>
+              )}
+            </div>
             <div className="text-white/50 text-xs mt-0.5 font-mono">{record.accelerateIp}:{record.acceleratePort}</div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
             {record.protocol?.toUpperCase() || "VMESS"}
           </span>
-          <RemarkPopover token={token} recordId={record.id} nodeName={nodeName} />
+          <RemarkPopover token={token} recordId={record.id} nodeName={nodeName} onSaved={refreshCardRemark} />
         </div>
       </div>
 
