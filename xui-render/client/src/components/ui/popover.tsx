@@ -15,6 +15,11 @@ function PopoverTrigger({
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
+function getPortalContainer(): HTMLElement | undefined {
+  if (typeof document === "undefined") return undefined;
+  return document.getElementById("portal-root") ?? undefined;
+}
+
 function PopoverContent({
   className,
   align = "center",
@@ -22,7 +27,7 @@ function PopoverContent({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={getPortalContainer()}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

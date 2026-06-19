@@ -4,6 +4,12 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+// 获取 portal 挂载容器（指向 #portal-root 而非 body，防止翻译插件 removeChild 崩溃）
+function getPortalContainer(): HTMLElement | undefined {
+  if (typeof document === "undefined") return undefined;
+  return document.getElementById("portal-root") ?? undefined;
+}
+
 function Select({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
@@ -56,7 +62,7 @@ function SelectContent({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={getPortalContainer()}>
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(

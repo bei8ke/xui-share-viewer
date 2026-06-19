@@ -59,10 +59,16 @@ function DialogTrigger({
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
 }
 
+// 获取 portal 挂载容器（指向 #portal-root 而非 body，防止翻译插件 removeChild 崩溃）
+function getPortalContainer(): HTMLElement | undefined {
+  if (typeof document === "undefined") return undefined;
+  return document.getElementById("portal-root") ?? undefined;
+}
+
 function DialogPortal({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
+  return <DialogPrimitive.Portal data-slot="dialog-portal" container={getPortalContainer()} {...props} />;
 }
 
 function DialogClose({

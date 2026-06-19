@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { useParams } from "wouter";
 import { useState, useCallback, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Copy, Check, Shield, AlertTriangle, Wifi, Server,
   Link2, QrCode, LayoutGrid, List, Zap, Info, ChevronDown,
@@ -124,26 +125,37 @@ function useLocalRemark(token: string, recordId: number) {
 }
 
 // ─── 备注编辑弹窗 ─────────────────────────────────────────────────────────────
+// mode="card"：备注文字显示在按钮后面（行内）
+// mode="list"：备注文字显示在节点名称上方（由父组件渲染），弹窗用 fixed 定位避免被截断
 function RemarkPopover({
   token,
   recordId,
   nodeName,
+  mode = "card",
+  onSaved,
 }: {
   token: string;
   recordId: number;
   nodeName: string;
+  mode?: "card" | "list";
+  onSaved?: () => void;
 }) {
   const [remark, saveRemark] = useLocalRemark(token, recordId);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(remark);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // 点击外部关闭
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (
+        popoverRef.current && !popoverRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
         setDraft(remark);
       }
@@ -152,23 +164,105 @@ function RemarkPopover({
     return () => document.removeEventListener("mousedown", handler);
   }, [open, remark]);
 
-  // 打开时聚焦
+  // 打开时聚焦 + 计算 fixed 位置（列表模式）
   useEffect(() => {
     if (open) {
       setDraft(remark);
+      if (mode === "list" && btnRef.current) {
+        const rect = btnRef.current.getBoundingClientRect();
+        setPopupPos({
+          top: rect.bottom + 6 + window.scrollY,
+          left: Math.min(rect.right - 288, window.innerWidth - 296),
+        });
+      }
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [open, remark]);
+  }, [open, remark, mode]);
 
   const handleSave = () => {
     saveRemark(draft.trim());
     setOpen(false);
     toast.success(draft.trim() ? "备注已保存" : "备注已清除");
+    onSaved?.();
   };
 
+  const popupContent = open && (
+    <div
+      ref={popoverRef}
+      style={mode === "list" && popupPos ? { position: "fixed", top: popupPos.top, left: popupPos.left, zIndex: 9999 } : {}}
+      className={mode === "card" ? "absolute z-50 right-0 mt-2 w-72 rounded-xl border border-white/20 bg-gray-900/98 backdrop-blur-sm shadow-2xl p-4" : "w-72 rounded-xl border border-white/20 bg-gray-900/98 backdrop-blur-sm shadow-2xl p-4"}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold text-white/80">我的备注</div>
+        <button onClick={() => { setOpen(false); setDraft(remark); }} className="text-white/40 hover:text-white/70 transition-colors">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="text-xs text-white/40 mb-2 truncate">{nodeName}</div>
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") { setOpen(false); setDraft(remark); } }}
+        placeholder="输入备注（仅本设备可见）"
+        className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-blue-400/60 focus:bg-white/15 transition-all"
+        maxLength={100}
+      />
+      <div className="flex items-center justify-between mt-3 gap-2">
+        <span className="text-xs text-white/30">{draft.length}/100 · 仅存本设备</span>
+        <div className="flex gap-2">
+          {remark && (
+            <button
+              onClick={() => { saveRemark(""); setDraft(""); setOpen(false); toast.success("备注已清除"); onSaved?.(); }}
+              className="px-3 py-1.5 rounded-lg text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:bg-red-500/10 transition-all"
+            >
+              清除
+            </button>
+          )}
+          <button
+            onClick={handleSave}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/30 hover:bg-blue-500/50 text-blue-300 border border-blue-500/40 transition-all"
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (mode === "card") {
+    return (
+      <div className="relative inline-block">
+        <button
+          ref={btnRef}
+          onClick={() => setOpen(v => !v)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 active:scale-95
+            ${remark
+              ? "bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 border border-yellow-500/30"
+              : "bg-white/10 hover:bg-white/20 text-white/60 hover:text-white border border-white/20 hover:border-white/40"
+            }`}
+          title={remark ? `我的备注：${remark}` : "添加我的备注"}
+        >
+          {remark ? <Pencil className="w-3.5 h-3.5" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
+          {remark ? "编辑备注" : "备注"}
+        </button>
+        {popupContent}
+        {/* 卡片模式：备注文字显示在按钮后面（行内，不遮挡） */}
+        {remark && !open && (
+          <div className="absolute right-0 top-full mt-1 max-w-[200px] text-xs text-yellow-300/80 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-2 py-1 truncate pointer-events-none z-10">
+            {remark}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // 列表模式：只渲染按钮，弹窗用 fixed 定位挂到 body 层
   return (
-    <div ref={popoverRef} className="relative inline-block">
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen(v => !v)}
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 active:scale-95
           ${remark
@@ -180,55 +274,13 @@ function RemarkPopover({
         {remark ? <Pencil className="w-3.5 h-3.5" /> : <MessageSquarePlus className="w-3.5 h-3.5" />}
         {remark ? "编辑备注" : "备注"}
       </button>
-
-      {open && (
-        <div className="absolute z-50 right-0 mt-2 w-72 rounded-xl border border-white/20 bg-gray-900/98 backdrop-blur-sm shadow-2xl p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-xs font-semibold text-white/80">我的备注</div>
-            <button onClick={() => { setOpen(false); setDraft(remark); }} className="text-white/40 hover:text-white/70 transition-colors">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="text-xs text-white/40 mb-2 truncate">{nodeName}</div>
-          <input
-            ref={inputRef}
-            type="text"
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") { setOpen(false); setDraft(remark); } }}
-            placeholder="输入备注（仅本设备可见）"
-            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-blue-400/60 focus:bg-white/15 transition-all"
-            maxLength={100}
-          />
-          <div className="flex items-center justify-between mt-3 gap-2">
-            <span className="text-xs text-white/30">{draft.length}/100 · 仅存本设备</span>
-            <div className="flex gap-2">
-              {remark && (
-                <button
-                  onClick={() => { saveRemark(""); setDraft(""); setOpen(false); toast.success("备注已清除"); }}
-                  className="px-3 py-1.5 rounded-lg text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:bg-red-500/10 transition-all"
-                >
-                  清除
-                </button>
-              )}
-              <button
-                onClick={handleSave}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/30 hover:bg-blue-500/50 text-blue-300 border border-blue-500/40 transition-all"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 已有备注时在按钮下方显示备注文字 */}
-      {remark && !open && (
-        <div className="absolute right-0 top-full mt-1 max-w-[200px] text-xs text-yellow-300/80 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-2 py-1 truncate pointer-events-none z-10">
-          {remark}
-        </div>
-      )}
-    </div>
+      {/* 列表模式弹窗用 portal 挂到 #portal-root，避免被 overflow:hidden 截断 */}
+      {open && typeof document !== "undefined" && (() => {
+        const container = document.getElementById("portal-root");
+        if (!container) return popupContent;
+        return createPortal(popupContent, container);
+      })()}
+    </>
   );
 }
 
@@ -345,29 +397,49 @@ function RecordCard({ record, index, token }: { record: RecordData; index: numbe
 function RecordListRow({ record, index, token }: { record: RecordData; index: number; token: string }) {
   const [qrOpen, setQrOpen] = useState(false);
   const nodeName = record.remark || `节点 ${index + 1}`;
+  // 列表模式下独立读取备注，用于在节点名称上方显示
+  const remarkKey = `remark_${token}_${record.id}`;
+  const [localRemark, setLocalRemark] = useState<string>(() => {
+    try { return localStorage.getItem(remarkKey) || ""; } catch { return ""; }
+  });
+  // 备注保存后同步显示（监听 storage 事件）
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === remarkKey) {
+        try { setLocalRemark(localStorage.getItem(remarkKey) || ""); } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [remarkKey]);
+  // 备注弹窗关闭后也刷新（同页内不触发 storage 事件）
+  const handleRemarkChange = useCallback(() => {
+    try { setLocalRemark(localStorage.getItem(remarkKey) || ""); } catch { /* ignore */ }
+  }, [remarkKey]);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-      {/* 主行 */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-        {/* 序号 + 名称 */}
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="w-6 h-6 rounded-full bg-white/10 text-white/60 text-xs flex items-center justify-center flex-shrink-0 font-medium">
+    <div className="rounded-xl border border-white/10 bg-white/5">
+      <div className="px-4 py-3 space-y-2">
+        {/* 第一行：序号 + 名称区域 + 协议标签 */}
+        <div className="flex items-start gap-2 min-w-0">
+          <span className="w-6 h-6 rounded-full bg-white/10 text-white/60 text-xs flex items-center justify-center flex-shrink-0 font-medium mt-0.5">
             {index + 1}
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
+            {/* 备注内容显示在节点名称上方（小字体） */}
+            {localRemark && (
+              <div className="text-xs text-yellow-300/70 mb-0.5 truncate">{localRemark}</div>
+            )}
             <div className="text-white text-sm font-medium truncate">{nodeName}</div>
-            <div className="text-white/40 text-xs font-mono">{record.accelerateIp}:{record.acceleratePort}</div>
+            <div className="text-white/40 text-xs font-mono mt-0.5">{record.accelerateIp}:{record.acceleratePort}</div>
           </div>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium flex-shrink-0 mt-0.5">
+            {record.protocol?.toUpperCase() || "VMESS"}
+          </span>
         </div>
 
-        {/* 协议标签 */}
-        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium flex-shrink-0">
-          {record.protocol?.toUpperCase() || "VMESS"}
-        </span>
-
-        {/* 操作按钮组 */}
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* 第二行：操作按钮组（自动换行） */}
+        <div className="flex items-center gap-2 flex-wrap pl-8">
           {record.vmessLink && (
             <CopyButton text={record.vmessLink} label="VMess" />
           )}
@@ -387,12 +459,18 @@ function RecordListRow({ record, index, token }: { record: RecordData; index: nu
               {qrOpen ? "收起" : "二维码"}
             </button>
           )}
-          {/* 备注按钮 */}
-          <RemarkPopover token={token} recordId={record.id} nodeName={nodeName} />
+          {/* 备注按钮：传入 mode="list"，弹窗用 fixed 定位，备注保存后回调刷新显示 */}
+          <RemarkPopover
+            token={token}
+            recordId={record.id}
+            nodeName={nodeName}
+            mode="list"
+            onSaved={handleRemarkChange}
+          />
         </div>
       </div>
 
-      {/* 展开的二维码（动态生成） */}
+      {/* 展开的二维码 */}
       {qrOpen && record.vmessLink && (
         <div className="border-t border-white/10 px-4 py-4 flex justify-center bg-white/3">
           <div className="p-3 bg-white rounded-xl inline-block">

@@ -18,11 +18,16 @@ function AlertDialogTrigger({
   );
 }
 
+function getPortalContainer(): HTMLElement | undefined {
+  if (typeof document === "undefined") return undefined;
+  return document.getElementById("portal-root") ?? undefined;
+}
+
 function AlertDialogPortal({
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Portal>) {
   return (
-    <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />
+    <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" container={getPortalContainer()} {...props} />
   );
 }
 

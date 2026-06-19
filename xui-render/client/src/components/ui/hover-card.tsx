@@ -17,6 +17,11 @@ function HoverCardTrigger({
   );
 }
 
+function getPortalContainer(): HTMLElement | undefined {
+  if (typeof document === "undefined") return undefined;
+  return document.getElementById("portal-root") ?? undefined;
+}
+
 function HoverCardContent({
   className,
   align = "center",
@@ -24,7 +29,7 @@ function HoverCardContent({
   ...props
 }: React.ComponentProps<typeof HoverCardPrimitive.Content>) {
   return (
-    <HoverCardPrimitive.Portal data-slot="hover-card-portal">
+    <HoverCardPrimitive.Portal data-slot="hover-card-portal" container={getPortalContainer()}>
       <HoverCardPrimitive.Content
         data-slot="hover-card-content"
         align={align}

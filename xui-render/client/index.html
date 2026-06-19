@@ -14,8 +14,10 @@
     THIS IS THE END OF A COMMENT BLOCK, BLOCK TO BE DELETED -->
   </head>
 
-  <body>
+  <body translate="no">
     <div id="root"></div>
+    <!-- Radix UI Portal container: keeps portals inside React-managed DOM, prevents browser-translate removeChild crash -->
+    <div id="portal-root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script
       defer

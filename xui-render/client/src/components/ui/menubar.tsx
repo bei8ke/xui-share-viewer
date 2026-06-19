@@ -32,10 +32,15 @@ function MenubarGroup({
   return <MenubarPrimitive.Group data-slot="menubar-group" {...props} />;
 }
 
+function getPortalContainer(): HTMLElement | undefined {
+  if (typeof document === "undefined") return undefined;
+  return document.getElementById("portal-root") ?? undefined;
+}
+
 function MenubarPortal({
   ...props
 }: React.ComponentProps<typeof MenubarPrimitive.Portal>) {
-  return <MenubarPrimitive.Portal data-slot="menubar-portal" {...props} />;
+  return <MenubarPrimitive.Portal data-slot="menubar-portal" container={getPortalContainer()} {...props} />;
 }
 
 function MenubarRadioGroup({
